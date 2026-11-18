@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>subreview</title>
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+
+<header id="bar">
+  <div class="brand">subreview</div>
+
+  <select id="episode" title="Transcript to review"></select>
+
+  <div class="bar-status">
+    <span id="counts"></span>
+    <span id="dirty" class="dot" hidden title="Unsaved changes"></span>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="seg" id="previewMode" title="What the overlay shows">
+    <button data-mode="playhead" class="on">Playhead</button>
+    <button data-mode="selected">Selected cue</button>
+  </div>
+
+  <button id="overlayBtn" class="toggle"
+          title="Hide the overlay so you can read the subtitle burned into the picture (H)">◉ Overlay on</button>
+
+  <button id="save" class="primary" disabled>Save <kbd>⌘S</kbd></button>
+  <button id="generate" disabled
+          title="Write this episode's .ass into the transcript's folder, saving first if needed (⇧⌘S)">Generate <kbd>⇧⌘S</kbd></button>
+  <button id="reconnect" class="primary" hidden
+          title="The Google sign-in lasts an hour; this renews it">Reconnect Google</button>
+  <button id="driveBtn" class="ghost" hidden title="Connect to different folders"></button>
+  <button id="help" class="ghost" title="Keyboard shortcuts">?</button>
+</header>
+
+<div id="banner" hidden></div>
+
+<!-- Shown on every visit: the Google sign-in needs a click to start it. -->
+<form id="setup" hidden>
+  <h1>subreview, from Google Drive</h1>
+  <p>Transcripts and videos come from two Drive folders. Saving and Generate
+    write only to the subtitles folder; the videos folder is only ever read.</p>
+  <label>OAuth client ID
+    <input id="setClient" autocomplete="off" spellcheck="false"
+           placeholder="1234567890-abc….apps.googleusercontent.com">
+  </label>
+  <label>Subtitles folder <small>read and written</small>
+    <input id="setSubs" autocomplete="off" spellcheck="false"
+           placeholder="Drive folder link or ID">
+  </label>
+  <label>Videos folder <small>read only</small>
+    <input id="setVideos" autocomplete="off" spellcheck="false"
+           placeholder="Drive folder link or ID">
+  </label>
+  <p class="fine">Kept in this browser only. The sign-in lasts an hour and
+    lives in this tab; nothing is stored anywhere else.</p>
+  <button id="connect" class="primary" type="button">Connect Google Drive</button>
+  <div id="setupStatus"></div>
+</form>
+
+<main id="app" hidden>
+
+  <section id="left">
+    <div id="stage">
+      <div id="frame">
+        <video id="video" preload="metadata" playsinline></video>
+        <div id="overlay"></div>
+        <div id="novideo" hidden>No video found for this transcript.</div>
+      </div>
+    </div>
+
+    <div id="scrub">
+      <input type="range" id="seek" min="0" max="100" step="0.01" value="0">
+      <div id="ticks"></div>
+    </div>
+
+    <div id="transport">
+      <button data-seek="-5" title="Back 5s (J)">⏪<small>5s</small></button>
+      <button data-seek="-1" title="Back 1s (Shift + &lt;)">◀◀<small>1s</small></button>
+      <button data-seek="-0.1" title="Back 0.1s (,)">◀<small>.1</small></button>
+      <button id="play" class="play" title="Play / pause (Space)">▶</button>
+      <button data-seek="0.1" title="Forward 0.1s (.)">▶<small>.1</small></button>
+      <button data-seek="1" title="Forward 1s (Shift + &gt;)">▶▶<small>1s</small></button>
+      <button data-seek="5" title="Forward 5s (L)">⏩<small>5s</small></button>
+
+      <div class="clock">
+        <span id="now">00:00.00</span>
+        <span class="of" id="dur">/ 00:00.00</span>
+      </div>
+
+      <label class="chk" title="Keep the cue list scrolled to the playing cue">
+        <input type="checkbox" id="follow" checked> Follow
+      </label>
+    </div>
+
+    <div id="nowplaying">
+      <span class="np-label">On screen</span>
+      <span id="npBody">—</span>
+    </div>
+
+    <div id="notes"></div>
+  </section>
+
+  <section id="right">
+    <div id="filters">
+      <input type="search" id="search" placeholder="Filter hanzi / English / cue number…">
+      <label class="chk"><input type="checkbox" id="issuesOnly"> Issues only</label>
+    </div>
+    <div id="list"></div>
+  </section>
+
+</main>
+
+<div id="loading">Loading…</div>
+
+<dialog id="helpDialog">
+  <h2>Keyboard</h2>
+  <table>
+    <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>&lt;</kbd> / <kbd>&gt;</kbd></td><td>Back / forward 1 second</td></tr>
+    <tr><td><kbd>,</kbd> / <kbd>.</kbd></td><td>Back / forward 0.1 second</td></tr>
+    <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Back / forward 1 second</td></tr>
+    <tr><td><kbd>J</kbd> / <kbd>L</kbd></td><td>Back / forward 5 seconds</td></tr>
+    <tr><th colspan="2">With a cue selected</th></tr>
+    <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>Previous / next cue</td></tr>
+    <tr><td><kbd>Enter</kbd></td><td>Seek to the cue and play it</td></tr>
+    <tr><td><kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>Flip this cue between our subtitle and the burned-in one, and replay it</td></tr>
+    <tr><td><kbd>I</kbd> / <kbd>O</kbd></td><td>Set start / end to the playhead</td></tr>
+    <tr><td colspan="2" class="sub">Any edit to a cue — timing, hanzi or English — rewinds to its
+      <b>start</b>, ready to replay with <kbd>Enter</kbd>. Pushing an <b>end</b> past the next cue moves that cue's start
+      along, so the two never overlap.</td></tr>
+    <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Nudge start −/+ 0.05s</td></tr>
+    <tr><td><kbd>{</kbd> <kbd>}</kbd></td><td>Nudge end −/+ 0.05s</td></tr>
+    <tr><td><kbd>S</kbd></td><td>Split the cue in two at the playhead</td></tr>
+    <tr><td><kbd>N</kbd></td><td>Add an empty cue below</td></tr>
+    <tr><td><kbd>Delete</kbd></td><td>Mark / unmark for removal</td></tr>
+    <tr><th colspan="2">Always</th></tr>
+    <tr><td><kbd>H</kbd></td><td>Hide / show the overlay</td></tr>
+    <tr><td colspan="2" class="sub">Our subtitles sit on an opaque backdrop over the line burned into the
+      picture, so checking that a cue's Chinese matches what the episode shows means getting them out of the
+      way. <b>◌ original</b> in a cue's editor hides them <b>for that cue</b> and stays on, through as many
+      replays as it takes, until you press it again — every cue starts out showing our subtitle.
+      <kbd>H</kbd> is the same switch for the whole episode at once.</td></tr>
+    <tr><td><kbd>⌘S</kbd></td><td>Save (renumbers and drops marked cues)</td></tr>
+    <tr><td><kbd>⇧⌘S</kbd></td><td>Generate: save, then write the .ass the way this folder's subreview.json says</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Leave the text field you're editing</td></tr>
+  </table>
+  <p class="fine">Text fields swallow the playback keys, so press <kbd>Esc</kbd> first if
+  you want to scrub while editing. <kbd>⌘S</kbd> and the timing buttons always work.</p>
+  <form method="dialog"><button class="primary">Close</button></form>
+</dialog>
+
+<script src="static/app.js"></script>
+</body>
+</html>

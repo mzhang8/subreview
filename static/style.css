@@ -1,0 +1,374 @@
+/* subreview — dark, dense, and out of the way. The only thing on screen that
+   should look styled is the subtitle preview, because that one has to look
+   exactly like the ASS output. */
+
+:root {
+  --bg:        #14161a;
+  --panel:     #1b1e24;
+  --panel-2:   #21252c;
+  --line:      #2c313a;
+  --line-soft: #23272f;
+  --text:      #e6e9ef;
+  --muted:     #8b93a3;
+  --dim:       #626b7c;
+  --accent:    #5aa9ff;
+  --accent-dim:#2b4d75;
+  --warn:      #f0a935;
+  --bad:       #ff6b6b;
+  --good:      #4fc98a;
+  --mark:      #7a4a52;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: #2a2f38; border-color: #3a414d; }
+button:disabled { opacity: .4; cursor: default; }
+button.primary { background: var(--accent-dim); border-color: #3c69a0; }
+button.primary:hover:not(:disabled) { background: #35608f; }
+button.ghost { background: transparent; }
+/* A switch that stays on, so it has to look different from a button you press
+   and are done with. */
+button.toggle { background: transparent; color: var(--muted); }
+button.toggle.on { background: var(--accent-dim); color: var(--text); border-color: var(--accent-dim); }
+
+input, select, textarea {
+  font: inherit;
+  color: var(--text);
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(90,169,255,.18);
+}
+
+kbd {
+  font: 11px/1 var(--mono);
+  background: #0d0f13;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 2px 4px;
+  color: var(--muted);
+}
+
+.chk { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); cursor: pointer; }
+.chk input { accent-color: var(--accent); }
+.spacer { flex: 1; }
+
+/* ---- top bar ----------------------------------------------------------- */
+
+#bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 46px;
+  padding: 0 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 600; letter-spacing: .02em; color: var(--muted); }
+/* When the bar runs short of room the episode menu gives it up, not the
+   buttons, whose labels would otherwise wrap onto two lines. */
+#bar > * { flex-shrink: 0; white-space: nowrap; }
+#episode { max-width: 420px; min-width: 120px; flex-shrink: 1; }
+#driveBtn { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.bar-status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+
+.seg { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); padding: 5px 11px; }
+.seg button.on { background: var(--accent-dim); color: var(--text); }
+
+/* ---- layout ------------------------------------------------------------ */
+
+#app { display: flex; height: calc(100vh - 46px); }
+#app[hidden] { display: none; }
+#left {
+  flex: 1 1 58%;
+  min-width: 420px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  padding: 12px;
+  gap: 10px;
+  overflow: hidden;
+}
+#right { flex: 1 1 42%; min-width: 360px; display: flex; flex-direction: column; overflow: hidden; }
+
+#loading { padding: 40px; color: var(--muted); }
+
+/* ---- video + overlay --------------------------------------------------- */
+
+#stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+#frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+/* object-fit leaves the picture letterboxed inside the element; fitOverlay()
+   measures the real picture rect and parks the overlay exactly on it. */
+#video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+
+/* The overlay is a fixed videoW x videoH canvas scaled to fit, so every
+   coordinate inside it is literally the pixel position the ASS file will
+   carry. Nothing in here is laid out by the browser. */
+#overlay {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: top left;
+  pointer-events: none;
+}
+/* Hidden rather than emptied: the overlay keeps its size and scale, so
+   bringing it back costs no relayout and cannot flicker. */
+#overlay.off { visibility: hidden; }
+
+#overlay .band { position: absolute; }
+#overlay .txt {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  white-space: pre;
+  line-height: 1;
+  color: #fff;
+}
+
+#novideo {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+}
+
+/* ---- transport --------------------------------------------------------- */
+
+#scrub { position: relative; }
+#seek { width: 100%; margin: 0; accent-color: var(--accent); background: transparent; border: 0; padding: 0; }
+#seek:focus { box-shadow: none; }
+#ticks { position: relative; height: 4px; margin-top: 2px; }
+#ticks i { position: absolute; top: 0; width: 1px; height: 4px; background: var(--dim); }
+#ticks i.sel { background: var(--accent); width: 2px; height: 6px; }
+
+#transport { display: flex; align-items: center; gap: 6px; }
+#transport button { display: flex; align-items: baseline; gap: 3px; padding: 5px 8px; }
+#transport button small { color: var(--dim); font-size: 10px; }
+#transport .play { width: 44px; justify-content: center; font-size: 15px; }
+
+.clock { margin-left: auto; font: 20px/1 var(--mono); font-variant-numeric: tabular-nums; }
+.clock .of { font-size: 12px; color: var(--dim); }
+
+/* ---- "on screen" strip + render notes ---------------------------------- */
+
+#nowplaying {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 7px 9px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  min-height: 32px;
+}
+.np-label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; flex: none; }
+#npBody { color: var(--muted); }
+#npBody b { color: var(--text); font-weight: 500; }
+#npBody .num { font: 11px/1 var(--mono); color: var(--accent); margin-right: 6px; }
+
+#notes {
+  max-height: 110px;
+  overflow-y: auto;
+  font: 11px/1.5 var(--mono);
+  color: var(--muted);
+}
+#notes .note { padding: 2px 0; border-bottom: 1px solid var(--line-soft); }
+#notes .note::before { content: "renderer: "; color: var(--dim); }
+#notes .note.check { color: var(--warn); }
+#notes:empty { display: none; }
+
+/* ---- cue list ---------------------------------------------------------- */
+
+#filters {
+  display: flex; gap: 10px; align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+#search { flex: 1; }
+
+#list { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+
+.cue {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 0 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+  scroll-margin: 80px;
+}
+.cue:hover { background: #191c22; }
+.cue.playing { background: #171d26; box-shadow: inset 2px 0 0 var(--accent-dim); }
+.cue.sel { background: #1d232c; box-shadow: inset 3px 0 0 var(--accent); cursor: default; }
+.cue.marked { background: #24191c; }
+.cue.marked .hz, .cue.marked .en { text-decoration: line-through; opacity: .5; }
+.cue.hidden { display: none; }
+
+.cue .n { font: 11px/1.6 var(--mono); color: var(--dim); text-align: right; }
+.cue.marked .n { color: var(--bad); }
+.cue .n .renum { display: block; color: var(--accent); font-size: 10px; }
+
+.cue .meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 2px; }
+.cue .t { font: 11px/1.5 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.cue .d { font: 10px/1.5 var(--mono); color: var(--dim); }
+
+.cue .hz { font-family: "Hiragino Sans GB", "PingFang SC", sans-serif; font-size: 14px; }
+.cue .en { color: var(--muted); font-size: 12px; }
+.cue .en:empty::before { content: "(no English)"; color: var(--bad); opacity: .6; }
+
+.tag {
+  font: 10px/1.4 var(--mono);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.tag.rows  { color: var(--warn); border-color: #5a4520; background: #2a2116; }
+.tag.tight { color: var(--warn); border-color: #5a4520; }
+.tag.time  { color: var(--accent); border-color: var(--accent-dim); background: #16202c; }
+/* This cue is showing the burned-in subtitle instead of ours — a view you
+   chose, not a problem with the cue, so it is the quietest tag here. */
+.tag.bare  { color: var(--dim); border-color: var(--line); }
+.tag.drop  { color: var(--bad); border-color: #5c2b2b; background: #2a1719; }
+.tag.bad   { color: var(--bad); border-color: #5c2b2b; background: #2a1719; }
+
+/* ---- inline editor ----------------------------------------------------- */
+
+.editor { display: flex; flex-direction: column; gap: 7px; margin-top: 6px; }
+.editor .times { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.editor .times label { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 11px; }
+.editor .times input {
+  width: 84px; font: 12px/1 var(--mono); text-align: right; padding: 4px 6px;
+  font-variant-numeric: tabular-nums;
+}
+.editor .times button { padding: 3px 7px; font-size: 11px; }
+.editor .times .grab { color: var(--accent); }
+.editor .arrow { color: var(--dim); }
+
+.editor textarea {
+  width: 100%; resize: vertical; min-height: 34px; overflow: hidden;
+}
+.editor .in-hz { font-family: "Hiragino Sans GB", "PingFang SC", sans-serif; font-size: 15px; }
+.editor .in-en { font-size: 13px; }
+.editor .fieldrow { display: flex; align-items: flex-start; gap: 7px; }
+.editor .fieldrow > span { width: 28px; flex: none; color: var(--dim); font-size: 10px; padding-top: 8px; text-transform: uppercase; letter-spacing: .05em; }
+
+.editor .py {
+  font: 11px/1.4 var(--mono);
+  color: var(--dim);
+  padding-left: 35px;
+  word-break: break-word;
+}
+.editor .actions { display: flex; gap: 6px; align-items: center; padding-left: 35px; }
+.editor .actions .danger { color: var(--bad); border-color: #4a2b2f; }
+.editor .actions .hint { margin-left: auto; color: var(--dim); font-size: 11px; }
+
+/* ---- help -------------------------------------------------------------- */
+
+dialog {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px 24px;
+  max-width: 520px;
+}
+dialog::backdrop { background: rgba(0,0,0,.6); }
+dialog h2 { margin: 0 0 12px; font-size: 15px; }
+dialog table { border-collapse: collapse; width: 100%; }
+dialog td { padding: 3px 10px 3px 0; vertical-align: top; }
+dialog td:first-child { white-space: nowrap; }
+dialog th { text-align: left; padding: 12px 0 4px; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 500; }
+dialog .fine { color: var(--muted); font-size: 12px; margin: 14px 0; }
+dialog form { text-align: right; }
+
+
+/* ---- toast ------------------------------------------------------------- */
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translate(-50%, 14px);
+  padding: 9px 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 26px rgba(0,0,0,.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .16s, transform .16s;
+  z-index: 50;
+}
+#toast { white-space: pre-line; max-width: min(92vw, 900px); }
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+#toast.good { border-color: #2f6b4d; color: var(--good); }
+#toast.bad  { border-color: #6b3030; color: var(--bad); }
+
+dialog td.sub { color: var(--muted); font-size: 11.5px; padding: 2px 0 8px 0; line-height: 1.4; }
+dialog td.sub b { color: var(--text); font-weight: 500; }
+
+/* -- the browser build ---------------------------------------------------- */
+
+/* One line, so the app below can give up exactly its height. */
+#banner {
+  height: 28px;
+  line-height: 16px;
+  padding: 6px 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: #3a2c12;
+  color: var(--warn);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+body:has(#banner:not([hidden])) #app { height: calc(100vh - 46px - 28px); }
+
+#setup {
+  max-width: 520px;
+  margin: 48px auto;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+#setup[hidden] { display: none; }
+#setup h1 { font-size: 17px; margin: 0; }
+#setup p { margin: 0; color: var(--muted); }
+#setup p.fine { font-size: 12px; color: var(--dim); }
+#setup label { display: flex; flex-direction: column; gap: 4px; }
+#setup label small { color: var(--dim); font-size: 11px; }
+#setup input { font-family: var(--mono); font-size: 12px; }
+#setup #connect { align-self: flex-start; }
+#setupStatus { color: var(--muted); min-height: 1.45em; white-space: pre-wrap; }
